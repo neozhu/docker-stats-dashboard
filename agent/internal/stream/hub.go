@@ -43,6 +43,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case c := <-h.remove:
 			h.disconnect(c)
 		case msg := <-h.broadcast:
+			h.log.Debug("broadcasting payload", slog.Int("clients", len(h.clients)), slog.Int("bytes", len(msg)))
 			for c := range h.clients {
 				select {
 				case c.send <- msg:

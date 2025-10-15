@@ -39,8 +39,9 @@ Flags accept environment variable equivalents (`AGENT_*`). Defaults are shown be
 | `--docker-endpoint`| `AGENT_DOCKER_ENDPOINT`| `unix:///var/run/docker.sock`   | Docker Engine endpoint                         |
 | `--listen`         | `AGENT_LISTEN_ADDR`    | `:8080`                         | HTTP/WebSocket listen address                  |
 | `--host-label`     | `AGENT_HOST_LABEL`     | local hostname                  | Friendly label advertised to dashboards        |
-| `--poll-interval`  | `AGENT_POLL_INTERVAL`  | `1s`                            | Sampling cadence for container stats           |
+| `--poll-interval`  | `AGENT_POLL_INTERVAL`  | `500ms`                         | Sampling cadence for container stats           |
 | `--log-level`      | `AGENT_LOG_LEVEL`      | `info`                          | Log level (`debug`, `info`, `warn`, `error`)   |
+| `--max-workers`    | `AGENT_MAX_WORKERS`    | `16`                            | Concurrent Docker stats workers                |
 
 Example:
 
@@ -48,7 +49,8 @@ Example:
 docker-agent \
   --docker-endpoint tcp://192.168.1.10:2375 \
   --poll-interval 2s \
-  --host-label staging-a
+  --host-label staging-a \
+  --max-workers 32
 ```
 
 ## Running with Docker

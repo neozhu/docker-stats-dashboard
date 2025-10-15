@@ -12,6 +12,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("AGENT_HOST_LABEL", "staging-a")
 	t.Setenv("AGENT_LOG_LEVEL", "debug")
 	t.Setenv("AGENT_POLL_INTERVAL", "2s")
+	t.Setenv("AGENT_MAX_WORKERS", "32")
 
 	cfg, err := Load()
 	if err != nil {
@@ -33,6 +34,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.PollInterval != 2*time.Second {
 		t.Fatalf("unexpected poll interval: %s", cfg.PollInterval)
 	}
+	if cfg.WorkerLimit != 32 {
+		t.Fatalf("unexpected worker limit: %d", cfg.WorkerLimit)
+	}
 }
 
 func TestLoadInvalidInterval(t *testing.T) {
@@ -41,5 +45,12 @@ func TestLoadInvalidInterval(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatalf("expected error for invalid duration")
+	}
+}
+
+func TestLoadInvalidWorkerLimit(t *testing.T) {
+	t.Setenv("AGENT_MAX_WORKERS", "zero")
+	if _, err := Load(); err == nil {
+		t.Fatalf("expected error for invalid worker limit")
 	}
 }

@@ -64,7 +64,7 @@ func run() error {
 	}
 	defer cli.Close()
 
-	collector := stats.NewCollector(cli, logger.With(slog.String("component", "collector")), cfg.PollInterval, hostName, agentLabel)
+	collector := stats.NewCollector(cli, logger.With(slog.String("component", "collector")), cfg.PollInterval, hostName, agentLabel, cfg.WorkerLimit)
 	hub := stream.NewHub(logger.With(slog.String("component", "hub")))
 	server := transport.NewServer(logger.With(slog.String("component", "http")), cfg.ListenAddr, hub)
 
@@ -126,6 +126,10 @@ func dispatchLoop(
 			logger.Warn("failed to marshal agent status", slog.String("error", err.Error()))
 			return
 		}
+		logger.Debug("dispatching agent status",
+			slog.Time("sent_at", status.SentAt),
+			slog.Uint64("uptime_secs", status.UptimeSecs),
+		)
 		hub.Broadcast(payload)
 	}
 
@@ -141,6 +145,11 @@ func dispatchLoop(
 				logger.Warn("failed to marshal stats batch", slog.String("error", err.Error()))
 				continue
 			}
+			logger.Debug("dispatching stats batch",
+				slog.Uint64("sequence", batch.Sequence),
+				slog.Time("sent_at", batch.SentAt),
+				slog.Int("containers", len(batch.Containers)),
+			)
 			hub.Broadcast(payload)
 		case <-statusTicker.C:
 			sendStatus()

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,8 +13,9 @@ const (
 	defaultDockerEndpoint = "unix:///var/run/docker.sock"
 	defaultListenAddr     = ":8080"
 	defaultHostLabel      = ""
-	defaultPollInterval   = time.Second
+	defaultPollInterval   = 500 * time.Millisecond
 	defaultLogLevel       = "info"
+	defaultWorkerLimit    = 16
 )
 
 type Config struct {
@@ -22,6 +24,7 @@ type Config struct {
 	HostLabel      string
 	PollInterval   time.Duration
 	LogLevel       string
+	WorkerLimit    int
 }
 
 func envOrDefault(key, fallback string) string {
@@ -53,12 +56,22 @@ func Load() (Config, error) {
 		pollInterval = duration
 	}
 
+	workerLimit := defaultWorkerLimit
+	if raw := envOrDefault("AGENT_MAX_WORKERS", ""); raw != "" {
+		value, err := parseWorkerLimit(raw)
+		if err != nil {
+			return Config{}, err
+		}
+		workerLimit = value
+	}
+
 	defaults := Config{
 		DockerEndpoint: envOrDefault("AGENT_DOCKER_ENDPOINT", defaultDockerEndpoint),
 		ListenAddr:     envOrDefault("AGENT_LISTEN_ADDR", defaultListenAddr),
 		HostLabel:      envOrDefault("AGENT_HOST_LABEL", defaultHostLabel),
 		PollInterval:   pollInterval,
 		LogLevel:       strings.ToLower(envOrDefault("AGENT_LOG_LEVEL", defaultLogLevel)),
+		WorkerLimit:    workerLimit,
 	}
 
 	flagSet := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
@@ -67,6 +80,7 @@ func Load() (Config, error) {
 	flagSet.StringVar(&cfg.HostLabel, "host-label", defaults.HostLabel, "Human readable label for this agent")
 	flagSet.DurationVar(&cfg.PollInterval, "poll-interval", defaults.PollInterval, "Interval for sampling container stats")
 	flagSet.StringVar(&cfg.LogLevel, "log-level", defaults.LogLevel, "Log level (debug, info, warn, error)")
+	flagSet.IntVar(&cfg.WorkerLimit, "max-workers", defaults.WorkerLimit, "Maximum number of concurrent stats workers")
 
 	if err := flagSet.Parse(filterArgs(os.Args[1:])); err != nil {
 		return Config{}, err
@@ -76,6 +90,9 @@ func Load() (Config, error) {
 
 	if cfg.PollInterval <= 0 {
 		return Config{}, fmt.Errorf("poll interval must be positive")
+	}
+	if cfg.WorkerLimit <= 0 {
+		cfg.WorkerLimit = 1
 	}
 
 	return cfg, nil
@@ -88,6 +105,7 @@ func filterArgs(args []string) []string {
 		"--host-label":      true,
 		"--poll-interval":   true,
 		"--log-level":       true,
+		"--max-workers":     true,
 	}
 
 	var filtered []string
@@ -115,4 +133,19 @@ func filterArgs(args []string) []string {
 	}
 
 	return filtered
+}
+
+func parseWorkerLimit(value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return defaultWorkerLimit, nil
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("invalid max worker value %q: %w", value, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("max workers must be positive")
+	}
+	return parsed, nil
 }

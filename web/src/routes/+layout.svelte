@@ -32,7 +32,7 @@
 
 	<footer class="border-t border-border/60 bg-background/80">
 		<div class="mx-auto w-full max-w-6xl px-6 py-4 text-xs text-muted-foreground">
-			Placeholder UI. Live Docker metrics will appear once the agent wiring is complete.
+			Keep an eye on the Go agent logs if a connection stops updating; the dashboard will auto-retry every few seconds.
 		</div>
 	</footer>
 </div>

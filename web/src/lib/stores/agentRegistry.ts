@@ -13,7 +13,7 @@ function readFromStorage(): AgentEndpoint[] {
 		const parsed = JSON.parse(raw) as AgentEndpoint[];
 		if (!Array.isArray(parsed)) return [];
 		return parsed.map((agent, index) => ({
-			id: agent.id ?? crypto.randomUUID(),
+			id: agent.id ?? generateID(),
 			url: agent.url,
 			label: agent.label ?? `Agent ${index + 1}`,
 			status: agent.status ?? 'placeholder',
@@ -57,7 +57,7 @@ export function addAgentEndpoint(url: string, label?: string): void {
 			return agents;
 		}
 
-		const id = crypto.randomUUID();
+		const id = generateID();
 		const createdAt = new Date().toISOString();
 
 		return [
@@ -118,3 +118,12 @@ export const agentRegistry = {
 };
 
 export { STORAGE_KEY as AGENT_REGISTRY_STORAGE_KEY };
+
+function generateID(): string {
+	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+		return crypto.randomUUID();
+	}
+
+	const random = Math.random().toString(16).slice(2, 10);
+	return `agent-${Date.now().toString(16)}-${random}`;
+}

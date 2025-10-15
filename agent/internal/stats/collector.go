@@ -25,6 +25,7 @@ type Collector struct {
 	pollInterval time.Duration
 	agentID      string
 	agentLabel   string
+	workerLimit  int
 
 	mu         sync.RWMutex
 	sequence   uint64
@@ -32,13 +33,17 @@ type Collector struct {
 	lastSentAt time.Time
 }
 
-func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Duration, agentID, agentLabel string) *Collector {
+func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Duration, agentID, agentLabel string, workerLimit int) *Collector {
+	if workerLimit <= 0 {
+		workerLimit = 1
+	}
 	return &Collector{
 		client:       cli,
 		log:          logger,
 		pollInterval: pollInterval,
 		agentID:      agentID,
 		agentLabel:   agentLabel,
+		workerLimit:  workerLimit,
 	}
 }
 
@@ -113,19 +118,14 @@ func (c *Collector) buildBatch(ctx context.Context) (types.ContainerStatsBatch, 
 		SentAt:     time.Now().UTC(),
 	}
 
+	samples := c.collectSamplesConcurrently(ctx, containers)
+
 	var (
 		totalCPU float64
 		totalMem uint64
 	)
 
-	for _, cont := range containers {
-		stats, err := c.fetchStats(ctx, cont.ID)
-		if err != nil {
-			c.log.Debug("failed to fetch container stats", slog.String("container_id", cont.ID), slog.String("error", err.Error()))
-			continue
-		}
-
-		sample := convertStats(cont, stats)
+	for _, sample := range samples {
 		batch.Containers = append(batch.Containers, sample)
 		totalCPU += sample.CPUPct
 		totalMem += sample.MemBytes
@@ -143,7 +143,76 @@ func (c *Collector) buildBatch(ctx context.Context) (types.ContainerStatsBatch, 
 	c.lastBatch = &batch
 	c.lastSentAt = batch.SentAt
 
+	c.log.Debug("collected batch",
+		slog.Uint64("sequence", batch.Sequence),
+		slog.Int("containers", len(batch.Containers)),
+		slog.Float64("cpu_pct", batch.AgentMetrics.CPUPct),
+		slog.Uint64("mem_bytes", batch.AgentMetrics.MemBytes),
+	)
+
 	return batch, nil
+}
+
+func (c *Collector) collectSamplesConcurrently(ctx context.Context, containers []docker.Container) []types.ContainerResourceSample {
+	if len(containers) == 0 {
+		return nil
+	}
+
+	type result struct {
+		sample types.ContainerResourceSample
+		ok     bool
+	}
+
+	results := make(chan result, len(containers))
+	var wg sync.WaitGroup
+
+	workerLimit := c.workerLimit
+	if workerLimit <= 0 {
+		workerLimit = 4
+	}
+	if workerLimit > len(containers) {
+		workerLimit = len(containers)
+	}
+
+	sem := make(chan struct{}, workerLimit)
+
+	for _, cont := range containers {
+		wg.Add(1)
+		go func(cont docker.Container) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			stats, err := c.fetchStats(ctx, cont.ID)
+			if err != nil {
+				c.log.Debug("failed to fetch container stats", slog.String("container_id", cont.ID), slog.String("error", err.Error()))
+				return
+			}
+
+			sample := convertStats(cont, stats)
+			select {
+			case results <- result{sample: sample, ok: true}:
+			case <-ctx.Done():
+			}
+		}(cont)
+	}
+
+	wg.Wait()
+	close(results)
+
+	var samples []types.ContainerResourceSample
+	for res := range results {
+		if res.ok {
+			samples = append(samples, res.sample)
+		}
+	}
+
+	return samples
 }
 
 func (c *Collector) fetchStats(ctx context.Context, containerID string) (docker.StatsJSON, error) {
