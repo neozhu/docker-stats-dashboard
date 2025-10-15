@@ -1,0 +1,15 @@
+version: '3.9'
+
+services:
+  docker-agent:
+    build:
+      context: .
+    container_name: docker-performance-agent
+    environment:
+      AGENT_HOST_LABEL: "lab-node-1"
+      AGENT_POLL_INTERVAL: "1s"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
