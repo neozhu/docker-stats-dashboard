@@ -22,6 +22,7 @@ import { clearManualRemoval, consumeManualRemoval, markManualRemoval } from '$li
 	} from '$lib/utils/format';
 	import type { AgentConnectionState, ContainerStatsBatch, AgentStatusMessage } from '$lib/types/messages';
 	import { cn } from '$lib/utils';
+	import { onMount } from 'svelte';
 
 	const agentsStore = agentRegistry;
 	let newEndpoint = '';
@@ -179,6 +180,27 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 
 	const exampleEndpoints = ['ws://127.0.0.1:8080/ws', 'ws://192.168.1.40:8080/ws'];
 
+	// Responsive column breakpoints: <640 => 1, 640-1023 => 2, >=1024 => 3
+	let maxResponsiveCols = 1;
+
+	function computeMaxCols(width: number): number {
+		if (width < 640) return 1;
+		if (width < 1024) return 2;
+		return 3;
+	}
+
+	if (browser) {
+		maxResponsiveCols = computeMaxCols(window.innerWidth);
+		const resizeHandler = () => {
+			const next = computeMaxCols(window.innerWidth);
+			if (next !== maxResponsiveCols) {
+				maxResponsiveCols = next;
+			}
+		};
+		window.addEventListener('resize', resizeHandler);
+		onDestroy(() => window.removeEventListener('resize', resizeHandler));
+	}
+
 	function sanitizeEndpoint(raw: string): string | null {
 		if (!raw) return null;
 
@@ -312,13 +334,18 @@ docker run --rm -it \
 			</CardContent>
 		</Card>
 	{:else}
-	
-		{#each $agentsStore as agent (agent.id)}
+
+		<!-- Responsive adaptive grid: max 3 columns; <640px=1; 640-1023px=2; >=1024px=3; never exceed agent count -->
+		{#key $agentsStore.length}
+		{#if $agentsStore.length > 0}
+			{@const agentColumns = Math.min($agentsStore.length, maxResponsiveCols)}
+			<div class="grid gap-6" style={`grid-template-columns: repeat(${agentColumns}, minmax(0,1fr));`}>
+			{#each $agentsStore as agent (agent.id)}
 			{@const batch = latestSnapshots.get(agent.id)}
 			{@const containers =
 				batch ? [...batch.containers].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 5) : []}
 
-			<Card>
+			<Card class="h-full flex flex-col">
 				<CardHeader class="flex flex-row items-start justify-between gap-4">
 					<div class="space-y-1">
 						<CardTitle class="text-lg">{agent.label}</CardTitle>
@@ -387,7 +414,7 @@ docker run --rm -it \
 					{/if}
 				</CardContent>
 
-				<CardFooter class="flex items-center justify-between">
+				<CardFooter class="mt-auto flex items-center justify-between">
 					<div class="text-xs text-muted-foreground">
 						Created {formatDateRelative(agent.createdAt)}
 					</div>
@@ -397,6 +424,9 @@ docker run --rm -it \
 					</Button>
 				</CardFooter>
 			</Card>
-		{/each}
+			{/each}
+			</div>
+		{/if}
+		{/key}
 	{/if}
 </section>
