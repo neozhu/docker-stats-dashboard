@@ -11,7 +11,8 @@
 	} from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { agentRegistry, addAgentEndpoint, removeAgentEndpoint, setAgentStatus } from '$lib/stores/agentRegistry';
+import { agentRegistry, addAgentEndpoint, removeAgentEndpoint, setAgentStatus } from '$lib/stores/agentRegistry';
+import { clearManualRemoval, consumeManualRemoval, markManualRemoval } from '$lib/stores/manualRemovalTracker';
 	import { connectAgentSocket, type AgentSocket } from '$lib/transport/agentSocket';
 	import {
 		formatBytes,
@@ -44,6 +45,9 @@
 			},
 			onDisconnect: () => {
 				activeSockets.delete(agentId);
+				if (consumeManualRemoval(agentId)) {
+					return;
+				}
 				setAgentStatus(agentId, 'error', null);
 				scheduleReconnect(agentId, agentLabel, endpoint);
 			},
@@ -81,19 +85,21 @@
 		}
 	}
 
-	function teardownConnection(agentId: string) {
+	function teardownConnection(agentId: string): boolean {
 		clearReconnect(agentId);
 		const socket = activeSockets.get(agentId);
+		const hadSocket = Boolean(socket);
 		if (socket) {
 			socket.close();
-			activeSockets.delete(agentId);
 		}
+		activeSockets.delete(agentId);
 		const next = new Map(latestSnapshots);
 		next.delete(agentId);
 		latestSnapshots = next;
 		const seqNext = new Map(sequenceCounters);
 		seqNext.delete(agentId);
 		sequenceCounters = seqNext;
+		return hadSocket;
 	}
 
 	$: if (browser) {
@@ -133,8 +139,14 @@
 	}
 
 	function handleRemoveAgent(id: string) {
-		teardownConnection(id);
+		console.log('removeAgentEndpoint',id)
+		markManualRemoval(id);
+		const hadSocket = teardownConnection(id);
 		removeAgentEndpoint(id);
+		
+		if (!hadSocket) {
+			clearManualRemoval(id);
+		}
 	}
 
 function statusBadgeClasses(status: AgentConnectionState): string {
@@ -200,11 +212,12 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 		return `${protocol}//${url.host}${pathname}${url.search}${url.hash}`;
 	}
 </script>
-
+ 
 <section class="mb-6">
 	<div class="rounded-lg border border-muted/60 bg-muted/30 p-4 text-sm text-muted-foreground">
 		Add any running agent to stream live Docker stats over WebSocket. Connections reconnect automatically if the agent restarts.
 	</div>
+ 
 </section>
 
 <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
@@ -229,6 +242,7 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 						class="sm:flex-1"
 					/>
 					<Button type="submit" class="sm:self-start">Save endpoint</Button>
+				 
 				</div>
 				{#if formError}
 					<p class="text-sm text-destructive">{formError}</p>
@@ -298,6 +312,7 @@ docker run --rm -it \
 			</CardContent>
 		</Card>
 	{:else}
+	
 		{#each $agentsStore as agent (agent.id)}
 			{@const batch = latestSnapshots.get(agent.id)}
 			{@const containers =
@@ -376,7 +391,10 @@ docker run --rm -it \
 					<div class="text-xs text-muted-foreground">
 						Created {formatDateRelative(agent.createdAt)}
 					</div>
-					<Button variant="ghost" size="sm" on:click={() => handleRemoveAgent(agent.id)}>
+					<Button variant="ghost" size="sm" on:click={() => { 
+						console.log('Button clicked!');
+						console.log(agent.id);
+						handleRemoveAgent(agent.id);}}>
 						Remove
 					</Button>
 				</CardFooter>
