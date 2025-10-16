@@ -109,9 +109,10 @@ docker run --rm -it \
       <div class="grid gap-6" style={`grid-template-columns: repeat(${agentColumns}, minmax(0,1fr));`}>
       {#each $agentsStore as agent (agent.id)}
       {@const batch = $latestBatches.get(agent.id) as ContainerStatsBatch}
-			{@const allContainers = batch ? [...batch.containers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
-			{@const isExpanded = expandedAgents.has(agent.id)}
-			{@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
+      {@const rawContainers = (batch && Array.isArray((batch as any).containers)) ? (batch as any).containers : []}
+		{@const allContainers = rawContainers.length ? [...rawContainers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
+		{@const isExpanded = expandedAgents.has(agent.id)}
+		{@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
 
 			<Card class="h-full flex flex-col">
 				<CardHeader class="flex flex-row items-start justify-between gap-4">

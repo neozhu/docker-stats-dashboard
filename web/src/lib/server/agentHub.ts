@@ -43,13 +43,22 @@ class AgentConnection {
         const parsed = JSON.parse(data.toString());
         const batchType = parsed?.type ?? 'unknown';
         console.log('[AgentHub] message   <-', this.cfg.id, batchType);
-        if (batchType === 'container_stats_batch' || batchType === 'agent_status') {
+        if (batchType === 'container_stats_batch') {
           this.emit({
             type: 'container_stats_batch',
             agent_id: this.cfg.id,
             label: this.cfg.label,
             payload: parsed,
             received_at: new Date().toISOString()
+          });
+        } else if (batchType === 'agent_status') {
+          // translate agent_status coming from agent into hub-level agent_status event
+          this.emit({
+            type: 'agent_status',
+            agent_id: this.cfg.id,
+            status: 'connected', // treat agent self-status as a liveness signal
+            label: this.cfg.label,
+            at: new Date().toISOString()
           });
         }
       } catch (err) {
