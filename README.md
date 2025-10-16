@@ -136,7 +136,7 @@ docker-compose:
 | Workflow | Scope | What it covers |
 | -------- | ----- | -------------- |
 | `Agent CI` | `agent/` | Runs `go mod verify` and `go build ./...` on pushes and pull requests touching agent code. |
-| `Web CI` | `web/` | Installs dependencies via pnpm, then runs linting and type checks for the SvelteKit app. |
+| `Web CI` | `web/` | Installs dependencies via pnpm and builds the SvelteKit app to ensure it compiles. |
 
 ## Production notes
 
