@@ -152,7 +152,7 @@ docker run --rm -it \
 										{isExpanded ? 'Containers (all)' : 'Top containers by CPU'}
 									</h3>
 									{#if allContainers.length > 5}
-										<Button variant="ghost" size="sm" class="text-xs" on:click={() => toggleExpanded(agent.id)}>
+										<Button variant="ghost" size="sm" class="text-xs" onclick={() => toggleExpanded(agent.id)}>
 											{isExpanded ? 'Show top 5' : `Show all (${allContainers.length})`}
 										</Button>
 									{/if}
