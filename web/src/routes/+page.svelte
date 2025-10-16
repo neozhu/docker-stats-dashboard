@@ -1,162 +1,28 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { onDestroy } from 'svelte';
-	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardFooter,
-		CardHeader,
-		CardTitle
-	} from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-import { agentRegistry, addAgentEndpoint, removeAgentEndpoint, setAgentStatus } from '$lib/stores/agentRegistry';
-import { clearManualRemoval, consumeManualRemoval, markManualRemoval } from '$lib/stores/manualRemovalTracker';
-	import { connectAgentSocket, type AgentSocket } from '$lib/transport/agentSocket';
-	import {
-		formatBytes,
-		formatDateRelative,
-		formatDuration,
-		formatPercent
-	} from '$lib/utils/format';
-	import type { AgentConnectionState, ContainerStatsBatch, AgentStatusMessage } from '$lib/types/messages';
-	import { cn } from '$lib/utils';
-	import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { onDestroy, onMount } from 'svelte';
+  import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '$lib/components/ui/card';
+  import { Button } from '$lib/components/ui/button';
+  import { formatBytes, formatDateRelative, formatDuration, formatPercent } from '$lib/utils/format';
+  import type { AgentConnectionState, ContainerStatsBatch } from '$lib/types/messages';
+  import { cn } from '$lib/utils';
+  import { agents as agentsStore, latestBatches, startSSE, stopSSE } from '$lib/stores/agentData';
 
-	const agentsStore = agentRegistry;
-	let newEndpoint = '';
-	let formError = '';
-	let latestSnapshots = new Map<string, ContainerStatsBatch>();
-	let sequenceCounters = new Map<string, number>();
-	// Track which agent cards have expanded container lists
-	let expandedAgents = new Set<string>();
+  let expandedAgents = new Set<string>();
+  function toggleExpanded(agentId: string) {
+    const next = new Set(expandedAgents);
+    if (next.has(agentId)) next.delete(agentId); else next.add(agentId);
+    expandedAgents = next;
+  }
 
-	function toggleExpanded(agentId: string) {
-		const next = new Set(expandedAgents);
-		if (next.has(agentId)) next.delete(agentId); else next.add(agentId);
-		expandedAgents = next; // trigger reactivity
-	}
+  let sequenceCounters = new Map<string, number>();
 
-	const activeSockets = new Map<string, AgentSocket>();
-	const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-	function ensureConnection(agentId: string, agentLabel: string, endpoint: string) {
-		if (!browser) return;
-		if (activeSockets.has(agentId)) return;
-
-		clearReconnect(agentId);
-		setAgentStatus(agentId, 'connecting', null);
-
-		const socket = connectAgentSocket(endpoint, {
-			onConnect: () => {
-				setAgentStatus(agentId, 'connected', new Date().toISOString());
-			},
-			onDisconnect: () => {
-				activeSockets.delete(agentId);
-				if (consumeManualRemoval(agentId)) {
-					return;
-				}
-				setAgentStatus(agentId, 'error', null);
-				scheduleReconnect(agentId, agentLabel, endpoint);
-			},
-			onStats: (payload) => {
-				latestSnapshots = new Map(latestSnapshots).set(agentId, payload);
-				sequenceCounters = new Map(sequenceCounters).set(agentId, payload.sequence);
-				setAgentStatus(agentId, 'connected', payload.sent_at);
-			},
-			onStatus: (payload) => {
-				const status = payload as AgentStatusMessage;
-				setAgentStatus(agentId, 'connected', status.sent_at);
-			}
-		});
-
-		activeSockets.set(agentId, socket);
-	}
-
-	function scheduleReconnect(agentId: string, agentLabel: string, endpoint: string) {
-		if (reconnectTimers.has(agentId)) return;
-		const timer = setTimeout(() => {
-			reconnectTimers.delete(agentId);
-			const agent = $agentsStore.find((entry) => entry.id === agentId);
-			if (agent) {
-				ensureConnection(agentId, agentLabel, endpoint);
-			}
-		}, 3000);
-		reconnectTimers.set(agentId, timer);
-	}
-
-	function clearReconnect(agentId: string) {
-		const timer = reconnectTimers.get(agentId);
-		if (timer) {
-			clearTimeout(timer);
-			reconnectTimers.delete(agentId);
-		}
-	}
-
-	function teardownConnection(agentId: string): boolean {
-		clearReconnect(agentId);
-		const socket = activeSockets.get(agentId);
-		const hadSocket = Boolean(socket);
-		if (socket) {
-			socket.close();
-		}
-		activeSockets.delete(agentId);
-		const next = new Map(latestSnapshots);
-		next.delete(agentId);
-		latestSnapshots = next;
-		const seqNext = new Map(sequenceCounters);
-		seqNext.delete(agentId);
-		sequenceCounters = seqNext;
-		return hadSocket;
-	}
-
-	$: if (browser) {
-		const agents = $agentsStore;
-		const seen = new Set<string>();
-
-		for (const agent of agents) {
-			seen.add(agent.id);
-			ensureConnection(agent.id, agent.label, agent.url);
-		}
-
-		for (const [agentId] of activeSockets) {
-			if (!seen.has(agentId)) {
-				teardownConnection(agentId);
-			}
-		}
-	}
-
-	onDestroy(() => {
-		activeSockets.forEach((socket) => socket.close());
-		activeSockets.clear();
-		reconnectTimers.forEach((timer) => clearTimeout(timer));
-		reconnectTimers.clear();
-	});
-
-	function handleAddAgent() {
-		formError = '';
-		const sanitized = sanitizeEndpoint(newEndpoint.trim());
-
-		if (!sanitized) {
-			formError = 'Provide a WebSocket URL (e.g. ws://127.0.0.1:8080).';
-			return;
-		}
-
-		addAgentEndpoint(sanitized);
-		newEndpoint = '';
-	}
-
-	function handleRemoveAgent(id: string) {
-		console.log('removeAgentEndpoint',id)
-		markManualRemoval(id);
-		const hadSocket = teardownConnection(id);
-		removeAgentEndpoint(id);
-		
-		if (!hadSocket) {
-			clearManualRemoval(id);
-		}
-	}
+  if (browser) {
+    onMount(() => {
+      startSSE();
+      return () => stopSSE();
+    });
+  }
 
 function statusBadgeClasses(status: AgentConnectionState): string {
 	const base = 'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm';
@@ -186,10 +52,8 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 	}
 	}
 
-	const exampleEndpoints = ['ws://127.0.0.1:8080/ws', 'ws://192.168.1.40:8080/ws'];
-
-	// Responsive column breakpoints: <640 => 1, 640-1023 => 2, >=1024 => 3
-	let maxResponsiveCols = 1;
+  // Responsive column breakpoints: <640 => 1, 640-1023 => 2, >=1024 => 3
+  let maxResponsiveCols = 1;
 
 	function computeMaxCols(width: number): number {
 		if (width < 640) return 1;
@@ -197,134 +61,29 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 		return 3;
 	}
 
-	if (browser) {
-		maxResponsiveCols = computeMaxCols(window.innerWidth);
-		const resizeHandler = () => {
-			const next = computeMaxCols(window.innerWidth);
-			if (next !== maxResponsiveCols) {
-				maxResponsiveCols = next;
-			}
-		};
-		window.addEventListener('resize', resizeHandler);
-		onDestroy(() => window.removeEventListener('resize', resizeHandler));
-	}
+  if (browser) {
+    maxResponsiveCols = computeMaxCols(window.innerWidth);
+    const resizeHandler = () => {
+      const next = computeMaxCols(window.innerWidth);
+      if (next !== maxResponsiveCols) {
+        maxResponsiveCols = next;
+      }
+    };
+    window.addEventListener('resize', resizeHandler);
+    onDestroy(() => window.removeEventListener('resize', resizeHandler));
+  }
 
-	function sanitizeEndpoint(raw: string): string | null {
-		if (!raw) return null;
-
-		let url: URL;
-		try {
-			url = new URL(raw);
-		} catch {
-			try {
-				url = new URL(`ws://${raw}`);
-			} catch {
-				return null;
-			}
-		}
-
-		let protocol = url.protocol;
-		if (protocol === 'http:') {
-			protocol = 'ws:';
-		} else if (protocol === 'https:') {
-			protocol = 'wss:';
-		}
-
-		if (protocol !== 'ws:' && protocol !== 'wss:') {
-			return null;
-		}
-
-		let pathname = url.pathname;
-		if (!pathname || pathname === '/') {
-			pathname = '/ws';
-		}
-
-		return `${protocol}//${url.host}${pathname}${url.search}${url.hash}`;
-	}
+  // removed manual endpoint input logic
 </script>
  
 <section class="mb-6">
-	<div class="rounded-lg border border-muted/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-		Add any running agent to stream live Docker stats over WebSocket. Connections reconnect automatically if the agent restarts.
-	</div>
- 
-</section>
-
-<section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
-	<Card>
-		<CardHeader class="space-y-1">
-			<CardTitle>Add agent endpoint</CardTitle>
-			<CardDescription>
-				Paste the WebSocket URL exposed by the Go agent. Endpoints persist to localStorage so your list
-				survives reloads.
-			</CardDescription>
-		</CardHeader>
-		<CardContent>
-			<form class="space-y-3" on:submit|preventDefault={handleAddAgent}>
-				<label class="text-sm font-medium text-muted-foreground" for="agent-endpoint">
-					Agent endpoint
-				</label>
-				<div class="flex flex-col gap-2 sm:flex-row">
-					<Input
-						id="agent-endpoint"
-						placeholder="ws://host:8080"
-						bind:value={newEndpoint}
-						class="sm:flex-1"
-					/>
-					<Button type="submit" class="sm:self-start">Save endpoint</Button>
-				 
-				</div>
-				{#if formError}
-					<p class="text-sm text-destructive">{formError}</p>
-				{/if}
-			</form>
-		</CardContent>
-		<CardFooter class="flex flex-wrap gap-2 text-xs text-muted-foreground">
-			<span class="font-medium text-foreground">Example:</span>
-			{#each exampleEndpoints as endpoint}
-				<Button
-					variant="outline"
-					size="sm"
-					class="font-mono"
-					onclick={() => {
-						newEndpoint = endpoint;
-						formError = '';
-					}}
-				>
-					{endpoint}
-				</Button>
-			{/each}
-		</CardFooter>
-	</Card>
-
-	<Card>
-		<CardHeader>
-			<CardTitle>Workflow tips</CardTitle>
-			<CardDescription>
-				Live data arrives directly from each connected agent. Use these helpers while monitoring hosts.
-			</CardDescription>
-		</CardHeader>
-		<CardContent class="space-y-3 text-sm text-muted-foreground">
-			<ul class="space-y-2">
-				<li class="flex items-start gap-2">
-					<span class="mt-1 size-2 rounded-full bg-accent"></span>
-					Add multiple endpoints to compare host utilisation side-by-side.
-				</li>
-				<li class="flex items-start gap-2">
-					<span class="mt-1 size-2 rounded-full bg-accent"></span>
-					Use the remove action once you finish inspecting a host; you can re-add it later from the form.
-				</li>
-				<li class="flex items-start gap-2">
-					<span class="mt-1 size-2 rounded-full bg-accent"></span>
-					The dashboard refreshes automatically whenever new batches arrive (target cadence: 1s).
-				</li>
-			</ul>
-		</CardContent>
-	</Card>
+  <div class="rounded-lg border border-muted/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+    通过服务端聚合 (SSE) 自动加载内网 Agents；无需在浏览器中配置 ws 地址。
+  </div>
 </section>
 
 <section class="mt-10 space-y-6">
-	{#if $agentsStore.length === 0}
+  {#if $agentsStore.length === 0}
 		<Card>
 			<CardHeader>
 				<CardTitle>No agents yet</CardTitle>
@@ -344,12 +103,12 @@ docker run --rm -it \
 	{:else}
 
 		<!-- Responsive adaptive grid: max 3 columns; <640px=1; 640-1023px=2; >=1024px=3; never exceed agent count -->
-		{#key $agentsStore.length}
-		{#if $agentsStore.length > 0}
-			{@const agentColumns = Math.min($agentsStore.length, maxResponsiveCols)}
-			<div class="grid gap-6" style={`grid-template-columns: repeat(${agentColumns}, minmax(0,1fr));`}>
-			{#each $agentsStore as agent (agent.id)}
-			{@const batch = latestSnapshots.get(agent.id)}
+    {#key $agentsStore.length}
+    {#if $agentsStore.length > 0}
+      {@const agentColumns = Math.min($agentsStore.length, maxResponsiveCols)}
+      <div class="grid gap-6" style={`grid-template-columns: repeat(${agentColumns}, minmax(0,1fr));`}>
+      {#each $agentsStore as agent (agent.id)}
+      {@const batch = $latestBatches.get(agent.id) as ContainerStatsBatch}
 			{@const allContainers = batch ? [...batch.containers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
 			{@const isExpanded = expandedAgents.has(agent.id)}
 			{@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
@@ -424,25 +183,17 @@ docker run --rm -it \
 							</div>
 						</div>
 					{:else}
-						<p class="text-sm text-muted-foreground">
-							Waiting for the first stats batch from the agent...
-						</p>
+						<p class="text-sm text-muted-foreground">Waiting for the first stats batch from the agent...</p>
 					{/if}
 				</CardContent>
 
-				<CardFooter class="mt-auto flex items-center justify-between">
-					<div class="text-xs text-muted-foreground">
-						Created {formatDateRelative(agent.createdAt)}
-					</div>
-					<Button variant="ghost" size="sm" onclick={() => { 
-						handleRemoveAgent(agent.id);}}>
-						Remove
-					</Button>
-				</CardFooter>
+					<CardFooter class="mt-auto flex items-center justify-between">
+						<div class="text-xs text-muted-foreground">Last seen {formatDateRelative(agent.lastSeenAt)}</div>
+					</CardFooter>
 			</Card>
-			{/each}
-			</div>
-		{/if}
-		{/key}
+				{/each}
+				</div>
+			{/if}
+			{/key}
 	{/if}
 </section>
