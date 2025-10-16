@@ -7,8 +7,24 @@ export const GET: RequestHandler = async () => {
   const stream = new ReadableStream({
     start(controller) {
       const enc = new TextEncoder();
+      let closed = false;
+      const clientId = Math.random().toString(36).slice(2, 10);
+      console.log('[SSE] client connect', clientId);
+
+      const safeEnqueue = (chunk: Uint8Array) => {
+        if (!closed) {
+          try {
+            controller.enqueue(chunk);
+          } catch {
+            // swallow if already closed concurrently
+          }
+        }
+      };
+
       const send = (data: unknown) => {
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
+        safeEnqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
+        const t = (typeof data === 'object' && data && 'type' in data) ? (data as { type?: string }).type : undefined;
+        console.log('[SSE] send event ->', clientId, t);
       };
 
       const listener = (evt: HubEvent) => {
@@ -21,13 +37,27 @@ export const GET: RequestHandler = async () => {
       send({ type: 'agent_list', agents: hub.listAgents(), ts: new Date().toISOString() });
 
       const heartbeat = setInterval(() => {
-        controller.enqueue(enc.encode(`: ping ${Date.now()}\n\n`));
+        safeEnqueue(enc.encode(`: ping ${Date.now()}\n\n`));
+        console.log('[SSE] heartbeat ->', clientId);
       }, 15000);
 
-      return () => {
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        console.log('[SSE] cleanup', clientId);
         clearInterval(heartbeat);
         hub.off('event', listener);
+        try { controller.close(); } catch { /* ignore */ }
       };
+
+      // When consumer cancels (client disconnect), cancel() is called
+      // Return cleanup for older implementations; also implement cancel
+      // in case runtime prefers that path
+      // (Some Node versions may not call pull/close semantics for SSE early aborts.)
+      // We expose both.
+  // @ts-expect-error augmenting underlying controller instance with cancel for early abort handling
+      this.cancel = cleanup;
+      return cleanup;
     }
   });
 
