@@ -24,22 +24,25 @@
     });
   }
 
-function statusBadgeClasses(status: AgentConnectionState): string {
-	const base = 'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm';
+type UIAgentStatus = AgentConnectionState | 'closed';
 
+function statusBadgeClasses(status: UIAgentStatus): string {
+	const base = 'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm';
 	switch (status) {
 		case 'connected':
-				return cn(base, 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300');
-			case 'connecting':
-				return cn(base, 'border-amber-400/40 bg-amber-400/10 text-amber-200');
-			case 'error':
-				return cn(base, 'border-destructive/40 bg-destructive/10 text-destructive');
-			default:
-				return cn(base, 'border-muted bg-muted text-muted-foreground');
+			return cn(base, 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300');
+		case 'connecting':
+			return cn(base, 'border-amber-400/40 bg-amber-400/10 text-amber-200');
+		case 'error':
+			return cn(base, 'border-destructive/40 bg-destructive/10 text-destructive');
+		case 'closed':
+			return cn(base, 'border-muted/40 bg-muted/20 text-muted-foreground');
+		default:
+			return cn(base, 'border-muted bg-muted text-muted-foreground');
 	}
 }
 
-function statusBadgeLabel(status: AgentConnectionState): string {
+function statusBadgeLabel(status: UIAgentStatus): string {
 	switch (status) {
 		case 'connected':
 			return 'connected';
@@ -47,10 +50,23 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 			return 'connecting';
 		case 'error':
 			return 'error';
+		case 'closed':
+			return 'closed';
 		default:
 			return 'placeholder';
 	}
-	}
+}
+
+  // Dynamic bar color for container CPU usage
+  function cpuBarClasses(pct: number): string {
+    // pct may exceed 100 due to calculation artifacts; clamp
+    const p = Math.max(0, Math.min(pct, 100));
+    if (p < 30) return 'bg-emerald-500';       // low
+    if (p < 50) return 'bg-lime-500';          // moderate
+    if (p < 70) return 'bg-amber-500';         // elevated
+    if (p < 85) return 'bg-orange-500';        // high
+    return 'bg-red-600';                       // critical
+  }
 
   // Responsive column breakpoints: <640 => 1, 640-1023 => 2, >=1024 => 3
   let maxResponsiveCols = 1;
@@ -169,7 +185,7 @@ docker run --rm -it \
 										</div>
 										<div class="h-2 rounded-full bg-muted">
 											<div
-												class="h-2 rounded-full bg-accent transition-all"
+												class={`h-2 rounded-full transition-[width,background-color] duration-300 ${cpuBarClasses(container.cpu_pct)}`}
 												style={`width: ${Math.min(container.cpu_pct, 100)}%`}
 											></div>
 										</div>
