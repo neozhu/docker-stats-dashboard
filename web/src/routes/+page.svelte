@@ -92,11 +92,6 @@ function statusBadgeLabel(status: UIAgentStatus): string {
   // removed manual endpoint input logic
 </script>
  
-<section class="mb-6">
-  <div class="rounded-lg border border-muted/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-    通过服务端聚合 (SSE) 自动加载内网 Agents；无需在浏览器中配置 ws 地址。
-  </div>
-</section>
 
 <section class="mt-10 space-y-6">
   {#if $agentsStore.length === 0}
