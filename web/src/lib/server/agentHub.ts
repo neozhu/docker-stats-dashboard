@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'node:events';
+import { env as dynamicEnv } from '$env/dynamic/private';
 
 export interface RawAgentConfig {
   id?: string;
@@ -15,7 +16,7 @@ export interface AgentConfigResolved {
 
 export type HubEvent =
   | { type: 'agent_status'; agent_id: string; status: 'connecting' | 'connected' | 'error' | 'closed'; label: string; at: string }
-  | { type: 'container_stats_batch'; agent_id: string; label: string; payload: any; received_at: string };
+  | { type: 'container_stats_batch'; agent_id: string; label: string; payload: unknown; received_at: string };
 
 class AgentConnection {
   private ws: WebSocket | null = null;
@@ -113,7 +114,7 @@ export class AgentHub extends EventEmitter {
 let hubSingleton: AgentHub | null = null;
 
 function parseEnv(): AgentConfigResolved[] {
-  const raw = process.env.AGENT_ENDPOINTS || '';
+  const raw = dynamicEnv.AGENT_ENDPOINTS || dynamicEnv.VITE_AGENT_ENDPOINTS || process.env.AGENT_ENDPOINTS || '';
   console.log('[AgentHub] parse AGENT_ENDPOINTS raw =', raw);
   // Format: id|label|ws://host:port/ws;id2|label2|ws://...
   // Or simpler: ws://host:port/ws;ws://other:8080/ws (auto id,label)
