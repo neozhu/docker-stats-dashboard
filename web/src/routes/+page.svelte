@@ -1,6 +1,8 @@
 <script lang="ts">
   import { browser } from '$app/environment';
-  import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
   import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
   import { formatBytes, formatDateRelative, formatDuration, formatPercent } from '$lib/utils/format';
@@ -169,8 +171,16 @@ docker run --rm -it \
 								</div>
 
 								<div class="space-y-4 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
-								{#each containers as container}
-									<div class="space-y-1.5">
+								{#each containers as container (container.id)}
+									<div class="space-y-1.5 container-row"
+										 animate:flip={{ duration: 220 }}
+										 transition:fade={{ duration: 120 }}
+										 on:introend={(e) => {
+										   // Force highlight after first intro for new items
+										   const el = e.currentTarget as HTMLElement;
+										   el.classList.add('flash-highlight');
+										   setTimeout(() => el.classList.remove('flash-highlight'), 500);
+										 }}>
 										<div class="flex items-center justify-between text-sm font-medium">
 											<span>{container.name}</span>
 											<span class="text-muted-foreground">
@@ -208,3 +218,25 @@ docker run --rm -it \
 			{/key}
 	{/if}
 </section>
+
+<style>
+	:global(.container-row) {
+		position: relative;
+	}
+
+	/* Flash highlight when a container row first appears */
+	:global(.container-row.flash-highlight) {
+		animation: flash-bg 0.5s ease-out;
+	}
+
+	@keyframes flash-bg {
+		0% { box-shadow: 0 0 0 0 var(--accent); background: var(--accent); color: var(--accent-foreground); }
+		60% { box-shadow: 0 0 0 2px var(--accent); }
+		100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+	}
+
+	/* Respect reduced motion */
+	@media (prefers-reduced-motion: reduce) {
+		:global(.container-row[style*="transform"]) { transition: none !important; animation: none !important; }
+	}
+</style>
