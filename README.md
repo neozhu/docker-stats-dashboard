@@ -4,7 +4,7 @@ A lightweight, two-piece monitoring stack for real-time Docker container metrics
 
 > **Note:** Full coding for this project was completed entirely by **AI CODEX** under **OpenSpec** guidance.
 
-![Dashboard preview placeholder](docs/images/dashboard-preview.png)
+![Dashboard preview placeholder](dashboard-preview.png)
 
 *Screenshot placeholder — update with a fresh capture when available.*
 
