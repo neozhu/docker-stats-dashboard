@@ -170,7 +170,7 @@ docker run --rm -it \
 									{/if}
 								</div>
 
-								<div class="space-y-4 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
+								<div class="space-y-4">
 								{#each containers as container (container.id)}
 									<div class="space-y-1.5 container-row"
 										 animate:flip={{ duration: 220 }}
