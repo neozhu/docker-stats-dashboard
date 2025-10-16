@@ -57,16 +57,15 @@ function statusBadgeLabel(status: UIAgentStatus): string {
 	}
 }
 
-  // Dynamic bar color for container CPU usage
-  function cpuBarClasses(pct: number): string {
-    // pct may exceed 100 due to calculation artifacts; clamp
-    const p = Math.max(0, Math.min(pct, 100));
-    if (p < 30) return 'bg-emerald-500';       // low
-    if (p < 50) return 'bg-lime-500';          // moderate
-    if (p < 70) return 'bg-amber-500';         // elevated
-    if (p < 85) return 'bg-orange-500';        // high
-    return 'bg-red-600';                       // critical
-  }
+	// Map CPU % to semantic CSS custom property (defined in theme)
+	function cpuBarColor(pct: number): string {
+		const p = Math.max(0, Math.min(pct, 100));
+		if (p < 30) return 'var(--color-cpu-bar-low)';
+		if (p < 50) return 'var(--color-cpu-bar-moderate)';
+		if (p < 70) return 'var(--color-cpu-bar-elevated)';
+		if (p < 85) return 'var(--color-cpu-bar-high)';
+		return 'var(--color-cpu-bar-critical)';
+	}
 
   // Responsive column breakpoints: <640 => 1, 640-1023 => 2, >=1024 => 3
   let maxResponsiveCols = 1;
@@ -180,8 +179,8 @@ docker run --rm -it \
 										</div>
 										<div class="h-2 rounded-full bg-muted">
 											<div
-												class={`h-2 rounded-full transition-[width,background-color] duration-300 ${cpuBarClasses(container.cpu_pct)}`}
-												style={`width: ${Math.min(container.cpu_pct, 100)}%`}
+												class="h-2 rounded-full transition-[width,background-color] duration-300"
+												style={`width: ${Math.min(container.cpu_pct, 100)}%; background:${cpuBarColor(container.cpu_pct)}`}
 											></div>
 										</div>
 										<div class="flex justify-between text-xs text-muted-foreground">
