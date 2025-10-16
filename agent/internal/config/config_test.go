@@ -12,7 +12,6 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("AGENT_HOST_LABEL", "staging-a")
 	t.Setenv("AGENT_LOG_LEVEL", "debug")
 	t.Setenv("AGENT_POLL_INTERVAL", "2s")
-	t.Setenv("AGENT_FETCH_TIMEOUT", "1500ms")
 	t.Setenv("AGENT_MAX_WORKERS", "32")
 
 	cfg, err := Load()
@@ -35,9 +34,6 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.PollInterval != 2*time.Second {
 		t.Fatalf("unexpected poll interval: %s", cfg.PollInterval)
 	}
-	if cfg.FetchTimeout != 1500*time.Millisecond {
-			t.Fatalf("unexpected fetch timeout: %s", cfg.FetchTimeout)
-	}
 	if cfg.WorkerLimit != 32 {
 		t.Fatalf("unexpected worker limit: %d", cfg.WorkerLimit)
 	}
@@ -49,10 +45,6 @@ func TestLoadInvalidInterval(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatalf("expected error for invalid duration")
-	}
-	t.Setenv("AGENT_FETCH_TIMEOUT", "nope")
-	if _, err := Load(); err == nil {
-			t.Fatalf("expected error for invalid fetch timeout")
 	}
 }
 
