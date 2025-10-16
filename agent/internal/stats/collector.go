@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	docker "github.com/docker/docker/api/types"
@@ -26,6 +27,7 @@ type Collector struct {
 	agentID      string
 	agentLabel   string
 	workerLimit  int
+	fetchTimeout time.Duration
 
 	mu         sync.RWMutex
 	sequence   uint64
@@ -33,7 +35,7 @@ type Collector struct {
 	lastSentAt time.Time
 }
 
-func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Duration, agentID, agentLabel string, workerLimit int) *Collector {
+func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Duration, fetchTimeout time.Duration, agentID, agentLabel string, workerLimit int) *Collector {
 	if workerLimit <= 0 {
 		workerLimit = 1
 	}
@@ -41,6 +43,7 @@ func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Dur
 		client:       cli,
 		log:          logger,
 		pollInterval: pollInterval,
+		fetchTimeout: fetchTimeout,
 		agentID:      agentID,
 		agentLabel:   agentLabel,
 		workerLimit:  workerLimit,
@@ -64,12 +67,28 @@ func (c *Collector) Collect(ctx context.Context, out chan<- types.ContainerStats
 	// Collect immediately at startup
 	c.collectOnce(ctx, out, true)
 
+	var collecting int32
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.collectOnce(ctx, out, false)
+			// Non-blocking: if previous collection still in progress, skip this tick
+			if !atomic.CompareAndSwapInt32(&collecting, 0, 1) {
+				c.log.Debug("skip collection tick: previous still running")
+				continue
+			}
+			go func() {
+				start := time.Now()
+				c.collectOnce(ctx, out, false)
+				dur := time.Since(start)
+				if dur > c.pollInterval {
+					c.log.Debug("collection slower than poll interval", slog.Duration("took", dur), slog.Duration("interval", c.pollInterval))
+				} else {
+					c.log.Debug("collection completed", slog.Duration("took", dur))
+				}
+				atomic.StoreInt32(&collecting, 0)
+			}()
 		}
 	}
 }
@@ -216,7 +235,11 @@ func (c *Collector) collectSamplesConcurrently(ctx context.Context, containers [
 }
 
 func (c *Collector) fetchStats(ctx context.Context, containerID string) (docker.StatsJSON, error) {
-	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeout := c.fetchTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	resp, err := c.client.ContainerStats(requestCtx, containerID, false)

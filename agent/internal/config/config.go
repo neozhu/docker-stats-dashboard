@@ -14,6 +14,10 @@ const (
 	defaultListenAddr     = ":8080"
 	defaultHostLabel      = ""
 	defaultPollInterval   = 500 * time.Millisecond
+	// defaultFetchTimeout limits per-container stats fetch to avoid a single slow container
+	// extending the whole batch duration. Tuned lower than the previous hardcoded 5s to
+	// favour overall refresh smoothness.
+	defaultFetchTimeout   = 2 * time.Second
 	defaultLogLevel       = "info"
 	defaultWorkerLimit    = 16
 )
@@ -23,6 +27,7 @@ type Config struct {
 	ListenAddr     string
 	HostLabel      string
 	PollInterval   time.Duration
+	FetchTimeout   time.Duration
 	LogLevel       string
 	WorkerLimit    int
 }
@@ -56,6 +61,13 @@ func Load() (Config, error) {
 		pollInterval = duration
 	}
 
+	fetchTimeout := defaultFetchTimeout
+	if duration, err := parseDurationEnv("AGENT_FETCH_TIMEOUT", defaultFetchTimeout); err != nil {
+		return Config{}, err
+	} else {
+		fetchTimeout = duration
+	}
+
 	workerLimit := defaultWorkerLimit
 	if raw := envOrDefault("AGENT_MAX_WORKERS", ""); raw != "" {
 		value, err := parseWorkerLimit(raw)
@@ -70,6 +82,7 @@ func Load() (Config, error) {
 		ListenAddr:     envOrDefault("AGENT_LISTEN_ADDR", defaultListenAddr),
 		HostLabel:      envOrDefault("AGENT_HOST_LABEL", defaultHostLabel),
 		PollInterval:   pollInterval,
+		FetchTimeout:   fetchTimeout,
 		LogLevel:       strings.ToLower(envOrDefault("AGENT_LOG_LEVEL", defaultLogLevel)),
 		WorkerLimit:    workerLimit,
 	}
@@ -79,6 +92,7 @@ func Load() (Config, error) {
 	flagSet.StringVar(&cfg.ListenAddr, "listen", defaults.ListenAddr, "HTTP listen address for WebSocket server")
 	flagSet.StringVar(&cfg.HostLabel, "host-label", defaults.HostLabel, "Human readable label for this agent")
 	flagSet.DurationVar(&cfg.PollInterval, "poll-interval", defaults.PollInterval, "Interval for sampling container stats")
+	flagSet.DurationVar(&cfg.FetchTimeout, "fetch-timeout", defaults.FetchTimeout, "Per-container stats fetch timeout")
 	flagSet.StringVar(&cfg.LogLevel, "log-level", defaults.LogLevel, "Log level (debug, info, warn, error)")
 	flagSet.IntVar(&cfg.WorkerLimit, "max-workers", defaults.WorkerLimit, "Maximum number of concurrent stats workers")
 
@@ -90,6 +104,9 @@ func Load() (Config, error) {
 
 	if cfg.PollInterval <= 0 {
 		return Config{}, fmt.Errorf("poll interval must be positive")
+	}
+	if cfg.FetchTimeout <= 0 {
+		return Config{}, fmt.Errorf("fetch timeout must be positive")
 	}
 	if cfg.WorkerLimit <= 0 {
 		cfg.WorkerLimit = 1
@@ -104,6 +121,7 @@ func filterArgs(args []string) []string {
 		"--listen":          true,
 		"--host-label":      true,
 		"--poll-interval":   true,
+		"--fetch-timeout":   true,
 		"--log-level":       true,
 		"--max-workers":     true,
 	}

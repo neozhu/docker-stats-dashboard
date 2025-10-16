@@ -64,7 +64,7 @@ func run() error {
 	}
 	defer cli.Close()
 
-	collector := stats.NewCollector(cli, logger.With(slog.String("component", "collector")), cfg.PollInterval, hostName, agentLabel, cfg.WorkerLimit)
+	collector := stats.NewCollector(cli, logger.With(slog.String("component", "collector")), cfg.PollInterval, cfg.FetchTimeout, hostName, agentLabel, cfg.WorkerLimit)
 	hub := stream.NewHub(logger.With(slog.String("component", "hub")))
 	server := transport.NewServer(logger.With(slog.String("component", "http")), cfg.ListenAddr, hub)
 
