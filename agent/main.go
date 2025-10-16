@@ -68,7 +68,7 @@ func run() error {
 	hub := stream.NewHub(logger.With(slog.String("component", "hub")))
 	server := transport.NewServer(logger.With(slog.String("component", "http")), cfg.ListenAddr, hub)
 
-	statsCh := make(chan types.ContainerStatsBatch, 8)
+	statsCh := make(chan types.ContainerStatsBatch, 64)
 	startedAt := time.Now()
 
 	g, ctx := errgroup.WithContext(ctx)

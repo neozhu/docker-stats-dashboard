@@ -27,7 +27,7 @@ func NewHub(logger *slog.Logger) *Hub {
 		clients:   map[*client]struct{}{},
 		register:  make(chan *client),
 		remove:    make(chan *client),
-		broadcast: make(chan []byte, 32),
+		broadcast: make(chan []byte, 256),
 	}
 }
 
@@ -57,7 +57,11 @@ func (h *Hub) Run(ctx context.Context) {
 }
 
 func (h *Hub) Broadcast(data []byte) {
-	h.broadcast <- data
+	select {
+	case h.broadcast <- data:
+	default:
+		h.log.Warn("dropping broadcast message", slog.Int("bytes", len(data)))
+	}
 }
 
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
