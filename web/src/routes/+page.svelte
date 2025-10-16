@@ -29,6 +29,14 @@ import { clearManualRemoval, consumeManualRemoval, markManualRemoval } from '$li
 	let formError = '';
 	let latestSnapshots = new Map<string, ContainerStatsBatch>();
 	let sequenceCounters = new Map<string, number>();
+	// Track which agent cards have expanded container lists
+	let expandedAgents = new Set<string>();
+
+	function toggleExpanded(agentId: string) {
+		const next = new Set(expandedAgents);
+		if (next.has(agentId)) next.delete(agentId); else next.add(agentId);
+		expandedAgents = next; // trigger reactivity
+	}
 
 	const activeSockets = new Map<string, AgentSocket>();
 	const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -342,8 +350,9 @@ docker run --rm -it \
 			<div class="grid gap-6" style={`grid-template-columns: repeat(${agentColumns}, minmax(0,1fr));`}>
 			{#each $agentsStore as agent (agent.id)}
 			{@const batch = latestSnapshots.get(agent.id)}
-			{@const containers =
-				batch ? [...batch.containers].sort((a, b) => b.cpu_pct - a.cpu_pct).slice(0, 5) : []}
+			{@const allContainers = batch ? [...batch.containers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
+			{@const isExpanded = expandedAgents.has(agent.id)}
+			{@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
 
 			<Card class="h-full flex flex-col">
 				<CardHeader class="flex flex-row items-start justify-between gap-4">
@@ -377,12 +386,19 @@ docker run --rm -it \
 							</div>
 						</div>
 
-						<div class="space-y-4">
-							<h3 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Top containers by CPU
-							</h3>
-
 							<div class="space-y-4">
+								<div class="flex items-center justify-between">
+									<h3 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+										{isExpanded ? 'Containers (all)' : 'Top containers by CPU'}
+									</h3>
+									{#if allContainers.length > 5}
+										<Button variant="ghost" size="sm" class="text-xs" on:click={() => toggleExpanded(agent.id)}>
+											{isExpanded ? 'Show top 5' : `Show all (${allContainers.length})`}
+										</Button>
+									{/if}
+								</div>
+
+								<div class="space-y-4 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
 								{#each containers as container}
 									<div class="space-y-1.5">
 										<div class="flex items-center justify-between text-sm font-medium">
