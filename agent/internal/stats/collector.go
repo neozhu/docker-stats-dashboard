@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -28,9 +27,14 @@ type Collector struct {
 	workerLimit  int
 
 	mu         sync.RWMutex
+	watchersMu sync.Mutex
 	sequence   uint64
 	lastBatch  *types.ContainerStatsBatch
 	lastSentAt time.Time
+
+	samples   map[string]types.ContainerResourceSample
+	watchers  map[string]context.CancelFunc
+	sampleSem chan struct{}
 }
 
 func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Duration, agentID, agentLabel string, workerLimit int) *Collector {
@@ -44,6 +48,9 @@ func NewCollector(cli *client.Client, logger *slog.Logger, pollInterval time.Dur
 		agentID:      agentID,
 		agentLabel:   agentLabel,
 		workerLimit:  workerLimit,
+		samples:      make(map[string]types.ContainerResourceSample),
+		watchers:     make(map[string]context.CancelFunc),
+		sampleSem:    make(chan struct{}, workerLimit),
 	}
 }
 
@@ -75,144 +82,189 @@ func (c *Collector) Collect(ctx context.Context, out chan<- types.ContainerStats
 }
 
 func (c *Collector) collectOnce(ctx context.Context, out chan<- types.ContainerStatsBatch, startup bool) {
-	batch, err := c.buildBatch(ctx)
-	if err != nil {
-		c.log.Warn("failed to collect container stats", slog.String("error", err.Error()))
-		// Use cached batch if available
-		if cached := c.LastBatch(); cached != nil {
-			c.log.Debug("serving cached batch after collection failure")
-			cachedClone := *cached
-			cachedClone.SentAt = time.Now().UTC()
-			select {
-			case out <- cachedClone:
-			case <-ctx.Done():
-			}
-		}
-		return
-	}
-
-	if startup {
-		c.log.Info("collector initialised", slog.Int("container_count", len(batch.Containers)))
-	}
-
-	select {
-	case out <- batch:
-	case <-ctx.Done():
-		return
-	}
-}
-
-func (c *Collector) buildBatch(ctx context.Context) (types.ContainerStatsBatch, error) {
 	containers, err := c.client.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(),
 		All:     false,
 	})
 	if err != nil {
-		return types.ContainerStatsBatch{}, fmt.Errorf("list containers: %w", err)
+		c.log.Warn("failed to list containers", slog.String("error", err.Error()))
+		if cached := c.LastBatch(); cached != nil {
+			c.log.Debug("serving cached batch after collection failure")
+			cachedClone := *cached
+			cachedClone.SentAt = time.Now().UTC()
+			c.dispatchBatch(ctx, out, cachedClone)
+		}
+		return
 	}
 
-	batch := types.ContainerStatsBatch{
-		Type:       "container_stats_batch",
-		AgentID:    c.agentID,
-		AgentLabel: c.agentLabel,
-		SentAt:     time.Now().UTC(),
+	active := make(map[string]docker.Container, len(containers))
+	for _, cont := range containers {
+		active[cont.ID] = cont
 	}
 
-	samples := c.collectSamplesConcurrently(ctx, containers)
+	c.syncWatchers(ctx, out, active)
 
-	var (
-		totalCPU float64
-		totalMem uint64
+	if startup {
+		c.log.Info("collector initialised", slog.Int("container_count", len(containers)))
+	}
+}
+
+func (c *Collector) syncWatchers(ctx context.Context, out chan<- types.ContainerStatsBatch, active map[string]docker.Container) {
+	c.watchersMu.Lock()
+	// Start watchers for new containers
+	for id, cont := range active {
+		if _, ok := c.watchers[id]; ok {
+			continue
+		}
+		watchCtx, cancel := context.WithCancel(ctx)
+		c.watchers[id] = cancel
+		go c.runWatcher(watchCtx, out, cont)
+	}
+
+	// Stop watchers for containers that disappeared
+	for id, cancel := range c.watchers {
+		if _, ok := active[id]; ok {
+			continue
+		}
+		cancel()
+		delete(c.watchers, id)
+	}
+	c.watchersMu.Unlock()
+
+	if batch, removed := c.removeMissingSamples(active); removed {
+		c.dispatchBatch(ctx, out, batch)
+	}
+}
+
+func (c *Collector) runWatcher(ctx context.Context, out chan<- types.ContainerStatsBatch, cont docker.Container) {
+	logger := c.log.With(
+		slog.String("container_id", cont.ID),
+		slog.String("container_name", firstName(cont.Names)),
 	)
 
-	for _, sample := range samples {
-		batch.Containers = append(batch.Containers, sample)
-		totalCPU += sample.CPUPct
-		totalMem += sample.MemBytes
+	// Send first sample immediately for low latency updates
+	c.sampleContainer(ctx, out, cont, logger)
+
+	ticker := time.NewTicker(c.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sampleContainer(ctx, out, cont, logger)
+		}
+	}
+}
+
+func (c *Collector) sampleContainer(ctx context.Context, out chan<- types.ContainerStatsBatch, cont docker.Container, logger *slog.Logger) {
+	select {
+	case c.sampleSem <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	defer func() { <-c.sampleSem }()
+
+	stats, err := c.fetchStats(ctx, cont.ID)
+	if err != nil {
+		logger.Debug("failed to fetch container stats", slog.String("error", err.Error()))
+		return
 	}
 
-	batch.AgentMetrics = types.AgentMetricsSummary{
-		CPUPct:   clamp(totalCPU, 0, 100),
-		MemBytes: totalMem,
-	}
+	batch := c.upsertSample(cont, stats)
+	c.dispatchBatch(ctx, out, batch)
+}
+
+func (c *Collector) upsertSample(cont docker.Container, stats docker.StatsJSON) types.ContainerStatsBatch {
+	sample := convertStats(cont, stats)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	c.samples[sample.ID] = sample
 	c.sequence++
+
+	batch := c.snapshotLocked(time.Now().UTC())
 	batch.Sequence = c.sequence
 	c.lastBatch = &batch
 	c.lastSentAt = batch.SentAt
 
-	c.log.Debug("collected batch",
+	c.log.Debug("collected sample",
 		slog.Uint64("sequence", batch.Sequence),
 		slog.Int("containers", len(batch.Containers)),
 		slog.Float64("cpu_pct", batch.AgentMetrics.CPUPct),
 		slog.Uint64("mem_bytes", batch.AgentMetrics.MemBytes),
 	)
 
-	return batch, nil
+	return batch
 }
 
-func (c *Collector) collectSamplesConcurrently(ctx context.Context, containers []docker.Container) []types.ContainerResourceSample {
-	if len(containers) == 0 {
-		return nil
+func (c *Collector) removeMissingSamples(active map[string]docker.Container) (types.ContainerStatsBatch, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.samples) == 0 {
+		return types.ContainerStatsBatch{}, false
 	}
 
-	type result struct {
-		sample types.ContainerResourceSample
-		ok     bool
-	}
-
-	results := make(chan result, len(containers))
-	var wg sync.WaitGroup
-
-	workerLimit := c.workerLimit
-	if workerLimit <= 0 {
-		workerLimit = 4
-	}
-	if workerLimit > len(containers) {
-		workerLimit = len(containers)
-	}
-
-	sem := make(chan struct{}, workerLimit)
-
-	for _, cont := range containers {
-		wg.Add(1)
-		go func(cont docker.Container) {
-			defer wg.Done()
-
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-sem }()
-
-			stats, err := c.fetchStats(ctx, cont.ID)
-			if err != nil {
-				c.log.Debug("failed to fetch container stats", slog.String("container_id", cont.ID), slog.String("error", err.Error()))
-				return
-			}
-
-			sample := convertStats(cont, stats)
-			select {
-			case results <- result{sample: sample, ok: true}:
-			case <-ctx.Done():
-			}
-		}(cont)
-	}
-
-	wg.Wait()
-	close(results)
-
-	var samples []types.ContainerResourceSample
-	for res := range results {
-		if res.ok {
-			samples = append(samples, res.sample)
+	removed := false
+	for id := range c.samples {
+		if _, ok := active[id]; ok {
+			continue
 		}
+		delete(c.samples, id)
+		removed = true
 	}
 
-	return samples
+	if !removed {
+		return types.ContainerStatsBatch{}, false
+	}
+
+	c.sequence++
+	batch := c.snapshotLocked(time.Now().UTC())
+	batch.Sequence = c.sequence
+	c.lastBatch = &batch
+	c.lastSentAt = batch.SentAt
+
+	return batch, true
+}
+
+func (c *Collector) snapshotLocked(sentAt time.Time) types.ContainerStatsBatch {
+	containers := make([]types.ContainerResourceSample, 0, len(c.samples))
+	var totalCPU float64
+	var totalMem uint64
+
+	for _, sample := range c.samples {
+		containers = append(containers, sample)
+		totalCPU += sample.CPUPct
+		totalMem += sample.MemBytes
+	}
+
+	return types.ContainerStatsBatch{
+		Type:       "container_stats_batch",
+		AgentID:    c.agentID,
+		AgentLabel: c.agentLabel,
+		SentAt:     sentAt,
+		Containers: containers,
+		AgentMetrics: types.AgentMetricsSummary{
+			CPUPct:   clamp(totalCPU, 0, 100),
+			MemBytes: totalMem,
+		},
+	}
+}
+
+func (c *Collector) dispatchBatch(ctx context.Context, out chan<- types.ContainerStatsBatch, batch types.ContainerStatsBatch) {
+	select {
+	case out <- batch:
+	case <-ctx.Done():
+	default:
+		// If the downstream consumer is slow, drop the newest update to keep the pipeline non-blocking
+		c.log.Warn("dropping stats batch due to slow consumer",
+			slog.Int("containers", len(batch.Containers)),
+			slog.Uint64("sequence", batch.Sequence),
+		)
+	}
 }
 
 func (c *Collector) fetchStats(ctx context.Context, containerID string) (docker.StatsJSON, error) {
