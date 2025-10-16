@@ -256,7 +256,7 @@ function statusBadgeLabel(status: AgentConnectionState): string {
 					variant="outline"
 					size="sm"
 					class="font-mono"
-					on:click={() => {
+					onclick={() => {
 						newEndpoint = endpoint;
 						formError = '';
 					}}
@@ -391,9 +391,7 @@ docker run --rm -it \
 					<div class="text-xs text-muted-foreground">
 						Created {formatDateRelative(agent.createdAt)}
 					</div>
-					<Button variant="ghost" size="sm" on:click={() => { 
-						console.log('Button clicked!');
-						console.log(agent.id);
+					<Button variant="ghost" size="sm" onclick={() => { 
 						handleRemoveAgent(agent.id);}}>
 						Remove
 					</Button>
