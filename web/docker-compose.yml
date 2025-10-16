@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    ports:
+      - "4173:4173"
+    environment:
+      NODE_ENV: production
+      AGENT_ENDPOINTS: ${AGENT_ENDPOINTS}
+    restart: unless-stopped
