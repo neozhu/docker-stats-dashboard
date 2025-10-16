@@ -6,7 +6,7 @@ A lightweight, two-piece monitoring stack for real-time Docker container metrics
 
 ![Dashboard preview placeholder](dashboard-preview.png)
 
-*Screenshot placeholder — update with a fresh capture when available.*
+
 
 ## Table of contents
 
