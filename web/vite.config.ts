@@ -4,6 +4,10 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		// Allow custom host for dev access (added per request)
+		allowedHosts: ['docker-stats.blazorserver.com']
+	},
 	test: {
 		globals: true,
 		environment: 'jsdom',
