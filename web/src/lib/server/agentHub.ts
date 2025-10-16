@@ -29,12 +29,12 @@ class AgentConnection {
 
   private connect() {
     if (this.stopped) return;
-    console.log('[AgentHub] connecting ->', this.cfg.id, this.cfg.url);
+    //console.log('[AgentHub] connecting ->', this.cfg.id, this.cfg.url);
     this.emit({ type: 'agent_status', agent_id: this.cfg.id, status: 'connecting', label: this.cfg.label, at: new Date().toISOString() });
     this.ws = new WebSocket(this.cfg.url);
 
     this.ws.on('open', () => {
-      console.log('[AgentHub] connected  ->', this.cfg.id);
+      //console.log('[AgentHub] connected  ->', this.cfg.id);
       this.emit({ type: 'agent_status', agent_id: this.cfg.id, status: 'connected', label: this.cfg.label, at: new Date().toISOString() });
     });
 
@@ -42,7 +42,7 @@ class AgentConnection {
       try {
         const parsed = JSON.parse(data.toString());
         const batchType = parsed?.type ?? 'unknown';
-        console.log('[AgentHub] message   <-', this.cfg.id, batchType);
+        //console.log('[AgentHub] message   <-', this.cfg.id, batchType);
         if (batchType === 'container_stats_batch') {
           this.emit({
             type: 'container_stats_batch',
@@ -67,7 +67,7 @@ class AgentConnection {
     });
 
     this.ws.on('close', () => {
-      console.log('[AgentHub] closed     x', this.cfg.id);
+      //console.log('[AgentHub] closed     x', this.cfg.id);
       this.emit({ type: 'agent_status', agent_id: this.cfg.id, status: 'closed', label: this.cfg.label, at: new Date().toISOString() });
       this.scheduleReconnect();
     });
@@ -83,7 +83,7 @@ class AgentConnection {
   private scheduleReconnect() {
     if (this.stopped) return;
     if (this.reconnectTimer) return;
-    console.log('[AgentHub] reconnect in 3s', this.cfg.id);
+    //console.log('[AgentHub] reconnect in 3s', this.cfg.id);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -104,7 +104,7 @@ export class AgentHub extends EventEmitter {
   constructor(configs: AgentConfigResolved[]) {
     super();
     this.configs = configs;
-    console.log('[AgentHub] bootstrap with', configs.length, 'agents');
+    //console.log('[AgentHub] bootstrap with', configs.length, 'agents');
     this.bootstrap();
   }
 
@@ -124,7 +124,7 @@ let hubSingleton: AgentHub | null = null;
 
 function parseEnv(): AgentConfigResolved[] {
   const raw = dynamicEnv.AGENT_ENDPOINTS || dynamicEnv.VITE_AGENT_ENDPOINTS || process.env.AGENT_ENDPOINTS || '';
-  console.log('[AgentHub] parse AGENT_ENDPOINTS raw =', raw);
+  //console.log('[AgentHub] parse AGENT_ENDPOINTS raw =', raw);
   // Format: id|label|ws://host:port/ws;id2|label2|ws://...
   // Or simpler: ws://host:port/ws;ws://other:8080/ws (auto id,label)
   return raw

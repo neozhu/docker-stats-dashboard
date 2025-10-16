@@ -9,7 +9,7 @@ export const GET: RequestHandler = async () => {
       const enc = new TextEncoder();
       let closed = false;
       const clientId = Math.random().toString(36).slice(2, 10);
-      console.log('[SSE] client connect', clientId);
+      //console.log('[SSE] client connect', clientId);
 
       const safeEnqueue = (chunk: Uint8Array) => {
         if (!closed) {
@@ -24,7 +24,7 @@ export const GET: RequestHandler = async () => {
       const send = (data: unknown) => {
         safeEnqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
         const t = (typeof data === 'object' && data && 'type' in data) ? (data as { type?: string }).type : undefined;
-        console.log('[SSE] send event ->', clientId, t);
+        //console.log('[SSE] send event ->', clientId, t);
       };
 
       const listener = (evt: HubEvent) => {
@@ -38,13 +38,13 @@ export const GET: RequestHandler = async () => {
 
       const heartbeat = setInterval(() => {
         safeEnqueue(enc.encode(`: ping ${Date.now()}\n\n`));
-        console.log('[SSE] heartbeat ->', clientId);
+        //console.log('[SSE] heartbeat ->', clientId);
       }, 15000);
 
       const cleanup = () => {
         if (closed) return;
         closed = true;
-        console.log('[SSE] cleanup', clientId);
+        //console.log('[SSE] cleanup', clientId);
         clearInterval(heartbeat);
         hub.off('event', listener);
         try { controller.close(); } catch { /* ignore */ }
