@@ -3,10 +3,10 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
-  import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '$lib/components/ui/card';
-  import { Button } from '$lib/components/ui/button';
-  import { formatBytes, formatDateRelative, formatDuration, formatPercent } from '$lib/utils/format';
-  import type { AgentConnectionState, ContainerStatsBatch } from '$lib/types/messages';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '$lib/components/ui/card';
+import { Button } from '$lib/components/ui/button';
+import { formatBytes, formatDateRelative, formatDuration, formatPercent } from '$lib/utils/format';
+import type { AgentConnectionState, ContainerResourceSample, ContainerStatsBatch } from '$lib/types/messages';
   import { cn } from '$lib/utils';
   import { agents as agentsStore, latestBatches, startSSE, stopSSE } from '$lib/stores/agentData';
 
@@ -17,7 +17,15 @@
     expandedAgents = next;
   }
 
-  let sequenceCounters = new Map<string, number>();
+let sequenceCounters = new Map<string, number>();
+
+function containerKey(agentId: string, container: ContainerResourceSample, index: number): string {
+  if (container.id && container.id.trim().length > 0) {
+    return container.id;
+  }
+  const suffix = container.name && container.name.trim().length > 0 ? container.name : index.toString();
+  return `${agentId}-${suffix}-${index}`;
+}
 
   if (browser) {
     onMount(() => {
@@ -170,8 +178,8 @@ docker run --rm -it \
 									{/if}
 								</div>
 
-								<div class="space-y-4">
-								{#each containers as container (container.id)}
+        <div class="space-y-4">
+        {#each containers as container, i (containerKey(agent.id, container, i))}
 									<div class="space-y-1.5 container-row"
 										 animate:flip={{ duration: 220 }}
 										 transition:fade={{ duration: 120 }}
