@@ -13,7 +13,7 @@ type ContainerResourceSample struct {
 	CPUPct        float64 `json:"cpu_pct"`
 	MemBytes      uint64  `json:"mem_bytes"`
 	MemLimitBytes uint64  `json:"mem_limit_bytes"`
-	UptimeSecs    uint64  `json:"uptime_secs"`
+	NetIOBytes    uint64  `json:"net_io_bytes"`
 }
 
 type ContainerStatsBatch struct {

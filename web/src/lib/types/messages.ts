@@ -21,7 +21,7 @@ export interface ContainerResourceSample {
 	cpu_pct: number;
 	mem_bytes: number;
 	mem_limit_bytes: number;
-	uptime_secs: number;
+	net_io_bytes: number;
 }
 
 export interface ContainerStatsBatch {
