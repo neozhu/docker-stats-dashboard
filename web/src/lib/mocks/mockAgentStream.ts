@@ -42,7 +42,7 @@ function createBatch(options: {
 		const cpu = Number(randomBetween(2, 75).toFixed(1));
 		const memLimit = 512 * 1024 * 1024;
 		const memUsage = Number(randomBetween(64, memLimit / (1024 * 1024)).toFixed(0)) * 1024 * 1024;
-		const uptime = Math.floor(randomBetween(120, 3600 * 12));
+		const netIO = Math.floor(randomBetween(5 * 1024, 200 * 1024 * 1024));
 
 		return {
 			id: `${agentId}-${name}`,
@@ -50,7 +50,7 @@ function createBatch(options: {
 			cpu_pct: cpu,
 			mem_bytes: memUsage,
 			mem_limit_bytes: memLimit,
-			uptime_secs: uptime
+			net_io_bytes: netIO
 		};
 	});
 

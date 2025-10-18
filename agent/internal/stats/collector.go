@@ -302,11 +302,12 @@ func convertStats(cont docker.Container, stats docker.StatsJSON) types.Container
 		memLimit = 1
 	}
 
-	created := time.Unix(cont.Created, 0)
-	if cont.Created == 0 {
-		created = time.Now()
+	var netIO uint64
+	if stats.Networks != nil {
+		for _, nw := range stats.Networks {
+			netIO += nw.RxBytes + nw.TxBytes
+		}
 	}
-	uptime := uint64(time.Since(created).Seconds())
 
 	return types.ContainerResourceSample{
 		ID:            cont.ID,
@@ -314,7 +315,7 @@ func convertStats(cont docker.Container, stats docker.StatsJSON) types.Container
 		CPUPct:        cpuPct,
 		MemBytes:      uint64(memUsage),
 		MemLimitBytes: uint64(memLimit),
-		UptimeSecs:    uptime,
+		NetIOBytes:    netIO,
 	}
 }
 

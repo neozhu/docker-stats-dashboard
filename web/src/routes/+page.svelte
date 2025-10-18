@@ -5,7 +5,7 @@
 	import { flip } from 'svelte/animate';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '$lib/components/ui/card';
 import { Button } from '$lib/components/ui/button';
-import { formatBytes, formatDateRelative, formatDuration, formatPercent } from '$lib/utils/format';
+import { formatBytes, formatDateRelative, formatPercent } from '$lib/utils/format';
 import type { AgentConnectionState, ContainerResourceSample, ContainerStatsBatch } from '$lib/types/messages';
   import { cn } from '$lib/utils';
   import { agents as agentsStore, latestBatches, startSSE, stopSSE } from '$lib/stores/agentData';
@@ -16,8 +16,6 @@ import type { AgentConnectionState, ContainerResourceSample, ContainerStatsBatch
     if (next.has(agentId)) next.delete(agentId); else next.add(agentId);
     expandedAgents = next;
   }
-
-let sequenceCounters = new Map<string, number>();
 
 function containerKey(agentId: string, container: ContainerResourceSample, index: number): string {
   if (container.id && container.id.trim().length > 0) {
@@ -162,9 +160,8 @@ docker run --rm -it \
 							<div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
 								<p class="text-muted-foreground">Containers sampled</p>
 								<p class="mt-1 text-2xl font-semibold">{batch.containers.length}</p>
-								<p class="text-xs text-muted-foreground mt-2">Sequence {sequenceCounters.get(agent.id) ?? batch.sequence}</p>
-							</div>
-						</div>
+                                                        </div>
+                                                </div>
 
 							<div class="space-y-4">
 								<div class="flex items-center justify-between">
@@ -205,8 +202,8 @@ docker run --rm -it \
 											<span>
 												{formatBytes(container.mem_bytes)} / {formatBytes(container.mem_limit_bytes)}
 											</span>
-											<span>Uptime {formatDuration(container.uptime_secs)}</span>
-										</div>
+                                                                                        <span>Net I/O {formatBytes(container.net_io_bytes)}</span>
+                                                                                </div>
 									</div>
 								{/each}
 							</div>

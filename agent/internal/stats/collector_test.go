@@ -37,6 +37,12 @@ func TestConvertStats(t *testing.T) {
 				Limit: 512 * 1024 * 1024,
 			},
 		},
+		Networks: map[string]docker.NetworkStats{
+			"eth0": {
+				RxBytes: 5120,
+				TxBytes: 2048,
+			},
+		},
 	}
 
 	sample := convertStats(cont, stats)
@@ -61,8 +67,9 @@ func TestConvertStats(t *testing.T) {
 		t.Fatalf("unexpected memory limit bytes: %d", sample.MemLimitBytes)
 	}
 
-	if sample.UptimeSecs == 0 {
-		t.Fatalf("expected uptime > 0")
+	expectedNetIO := uint64(5120 + 2048)
+	if sample.NetIOBytes != expectedNetIO {
+		t.Fatalf("unexpected net IO bytes: got %d, want %d", sample.NetIOBytes, expectedNetIO)
 	}
 }
 
