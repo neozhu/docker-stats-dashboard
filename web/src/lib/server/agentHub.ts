@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'node:events';
 import { env as dynamicEnv } from '$env/dynamic/private';
+import type { AgentCpuSample, ContainerStatsBatch } from '$lib/types/messages';
 
 export interface RawAgentConfig {
   id?: string;
@@ -14,16 +15,43 @@ export interface AgentConfigResolved {
   url: string;
 }
 
-export type HubEvent =
-  | { type: 'agent_status'; agent_id: string; status: 'connecting' | 'connected' | 'error' | 'closed'; label: string; at: string }
-  | { type: 'container_stats_batch'; agent_id: string; label: string; payload: unknown; received_at: string };
+const HISTORY_WINDOW_MS = 30 * 60 * 1000;
+const MAX_HISTORY_POINTS = 360;
+
+type AgentStatusEvent = {
+  type: 'agent_status';
+  agent_id: string;
+  status: 'connecting' | 'connected' | 'error' | 'closed';
+  label: string;
+  at: string;
+};
+
+type ContainerStatsEventBase = {
+  type: 'container_stats_batch';
+  agent_id: string;
+  label: string;
+  payload: unknown;
+  received_at: string;
+};
+
+type AgentConnectionEvent = AgentStatusEvent | ContainerStatsEventBase;
+
+export type HubEvent = AgentStatusEvent | (ContainerStatsEventBase & { history: AgentCpuSample[] });
+
+function isContainerStatsBatch(payload: unknown): payload is ContainerStatsBatch {
+  if (typeof payload !== 'object' || payload === null) return false;
+  if (!('agent_metrics' in payload)) return false;
+  const metrics = (payload as { agent_metrics?: unknown }).agent_metrics;
+  if (typeof metrics !== 'object' || metrics === null) return false;
+  return 'cpu_pct' in metrics;
+}
 
 class AgentConnection {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private stopped = false;
 
-  constructor(private cfg: AgentConfigResolved, private emit: (e: HubEvent) => void) {
+  constructor(private cfg: AgentConfigResolved, private emit: (e: AgentConnectionEvent) => void) {
     this.connect();
   }
 
@@ -100,6 +128,7 @@ class AgentConnection {
 export class AgentHub extends EventEmitter {
   private agents = new Map<string, AgentConnection>();
   private configs: AgentConfigResolved[] = [];
+  private cpuHistory = new Map<string, AgentCpuSample[]>();
 
   constructor(configs: AgentConfigResolved[]) {
     super();
@@ -110,9 +139,48 @@ export class AgentHub extends EventEmitter {
 
   private bootstrap() {
     for (const cfg of this.configs) {
-      const conn = new AgentConnection(cfg, (e) => this.emit('event', e));
+      const conn = new AgentConnection(cfg, (e) => this.handleConnectionEvent(e));
       this.agents.set(cfg.id, conn);
     }
+  }
+
+  private handleConnectionEvent(event: AgentConnectionEvent) {
+    if (event.type === 'container_stats_batch') {
+      const history = this.recordCpuHistory(event);
+      const enriched: HubEvent = { ...event, history };
+      this.emit('event', enriched);
+      return;
+    }
+
+    this.emit('event', event);
+  }
+
+  private recordCpuHistory(event: ContainerStatsEventBase): AgentCpuSample[] {
+    const nextHistory = [...(this.cpuHistory.get(event.agent_id) ?? [])];
+
+    if (isContainerStatsBatch(event.payload)) {
+      const payload = event.payload as ContainerStatsBatch;
+      const cpu = Number(payload.agent_metrics?.cpu_pct);
+      if (Number.isFinite(cpu)) {
+        const rawTimestamp = typeof payload.sent_at === 'string' ? payload.sent_at : event.received_at;
+        const ts = new Date(rawTimestamp);
+        const iso = Number.isNaN(ts.getTime()) ? new Date(event.received_at).toISOString() : ts.toISOString();
+        nextHistory.push({ at: iso, cpu_pct: cpu });
+      }
+    }
+
+    const cutoff = Date.now() - HISTORY_WINDOW_MS;
+    const filtered = nextHistory.filter((sample) => {
+      const sampleDate = new Date(sample.at);
+      return !Number.isNaN(sampleDate.getTime()) && sampleDate.getTime() >= cutoff;
+    });
+
+    if (filtered.length > MAX_HISTORY_POINTS) {
+      filtered.splice(0, filtered.length - MAX_HISTORY_POINTS);
+    }
+
+    this.cpuHistory.set(event.agent_id, filtered);
+    return filtered.map((sample) => ({ ...sample }));
   }
 
   listAgents(): { id: string; label: string; url: string }[] {

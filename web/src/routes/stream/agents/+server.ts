@@ -55,8 +55,7 @@ export const GET: RequestHandler = async () => {
       // in case runtime prefers that path
       // (Some Node versions may not call pull/close semantics for SSE early aborts.)
       // We expose both.
-  // @ts-expect-error augmenting underlying controller instance with cancel for early abort handling
-      this.cancel = cleanup;
+      (controller as ReadableStreamDefaultController<Uint8Array> & { cancel?: () => void }).cancel = cleanup;
       return cleanup;
     }
   });
