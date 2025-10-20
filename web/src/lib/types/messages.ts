@@ -11,15 +11,20 @@ export interface AgentEndpoint {
 }
 
 export interface AgentMetricsSummary {
-	cpu_pct: number;
-	mem_bytes: number;
+        cpu_pct: number;
+        mem_bytes: number;
+}
+
+export interface AgentCpuSample {
+        at: string;
+        cpu_pct: number;
 }
 
 export interface ContainerResourceSample {
-	id: string;
-	name: string;
-	cpu_pct: number;
-	mem_bytes: number;
+        id: string;
+        name: string;
+        cpu_pct: number;
+        mem_bytes: number;
 	mem_limit_bytes: number;
 	net_io_bytes: number;
 }

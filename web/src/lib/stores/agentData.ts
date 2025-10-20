@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
-import type { ContainerStatsBatch } from '$lib/types/messages';
+import type { AgentCpuSample, ContainerStatsBatch } from '$lib/types/messages';
 
 export interface AgentMeta {
   id: string;
@@ -12,6 +12,7 @@ export interface AgentMeta {
 
 export const agents = writable<AgentMeta[]>([]);
 export const latestBatches = writable<Map<string, ContainerStatsBatch>>(new Map());
+export const agentCpuHistory = writable<Map<string, AgentCpuSample[]>>(new Map());
 
 let es: EventSource | null = null;
 
@@ -34,6 +35,14 @@ export function startSSE() {
             lastSeenAt: null
           }));
           agents.set(list);
+          agentCpuHistory.update((prev) => {
+            const next = new Map<string, AgentCpuSample[]>();
+            for (const agent of list) {
+              const existing = prev.get(agent.id);
+              next.set(agent.id, existing ? [...existing] : []);
+            }
+            return next;
+          });
           break;
         }
         case 'agent_status': {
@@ -48,6 +57,17 @@ export function startSSE() {
           latestBatches.update((m) => {
             const next = new Map(m);
             next.set(payload.agent_id, payload);
+            return next;
+          });
+          const history = Array.isArray(data.history)
+            ? (data.history as AgentCpuSample[]).map((sample) => ({
+                at: sample.at,
+                cpu_pct: sample.cpu_pct
+              }))
+            : [];
+          agentCpuHistory.update((m) => {
+            const next = new Map(m);
+            next.set(payload.agent_id, history);
             return next;
           });
           break;

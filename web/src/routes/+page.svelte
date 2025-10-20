@@ -8,7 +8,7 @@ import { Button } from '$lib/components/ui/button';
 import { formatBytes, formatDateRelative, formatPercent } from '$lib/utils/format';
 import type { AgentConnectionState, ContainerResourceSample, ContainerStatsBatch } from '$lib/types/messages';
   import { cn } from '$lib/utils';
-  import { agents as agentsStore, latestBatches, startSSE, stopSSE } from '$lib/stores/agentData';
+  import { agentCpuHistory, agents as agentsStore, latestBatches, startSSE, stopSSE } from '$lib/stores/agentData';
 
   let expandedAgents = new Set<string>();
   function toggleExpanded(agentId: string) {
@@ -128,9 +128,10 @@ docker run --rm -it \
       {#each $agentsStore as agent (agent.id)}
       {@const batch = $latestBatches.get(agent.id) as ContainerStatsBatch}
       {@const rawContainers = (batch && Array.isArray((batch as any).containers)) ? (batch as any).containers : []}
-		{@const allContainers = rawContainers.length ? [...rawContainers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
-		{@const isExpanded = expandedAgents.has(agent.id)}
-		{@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
+                {@const allContainers = rawContainers.length ? [...rawContainers].sort((a, b) => b.cpu_pct - a.cpu_pct) : []}
+                {@const isExpanded = expandedAgents.has(agent.id)}
+                {@const containers = isExpanded ? allContainers : allContainers.slice(0, 5)}
+                {@const cpuHistory = $agentCpuHistory.get(agent.id) ?? []}
 
 			<Card class="h-full flex flex-col">
 				<CardHeader class="flex flex-row items-start justify-between gap-4">
@@ -159,7 +160,28 @@ docker run --rm -it \
                                                         </div>
                                                 </div>
 
-							<div class="space-y-4">
+                                                        <div class="rounded-lg border border-border/60 bg-card/50 p-4">
+                                                                {#if cpuHistory.length > 0}
+                                                                        <div class="h-24 w-full overflow-hidden">
+                                                                                <div class="flex h-full items-end gap-[2px]" aria-hidden="true">
+                                                                                        {#each cpuHistory as point, idx (`${point.at}-${idx}`)}
+                                                                                                {@const clamped = Math.max(0, Math.min(point.cpu_pct ?? 0, 100))}
+                                                                                                <div
+                                                                                                        class="flex-1 min-w-[2px] rounded-sm"
+                                                                                                        style={`height: ${clamped}%; background: var(--primary);`}
+                                                                                                ></div>
+                                                                                        {/each}
+                                                                                </div>
+                                                                        </div>
+                                                                        <p class="sr-only">Host CPU over the last 30 minutes.</p>
+                                                                {:else}
+                                                                        <div class="flex h-24 items-center justify-center text-xs text-muted-foreground">
+                                                                                Waiting for CPU samples...
+                                                                        </div>
+                                                                {/if}
+                                                        </div>
+
+                                                        <div class="space-y-4">
 								<div class="flex items-center justify-between">
 									<h3 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
 										{isExpanded ? 'Containers (all)' : 'Top containers by CPU'}

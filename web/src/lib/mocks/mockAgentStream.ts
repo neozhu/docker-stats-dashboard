@@ -75,7 +75,7 @@ export function createMockAgentStream(options: MockAgentStreamOptions): MockAgen
 	const { agentId, agentLabel, intervalMs = 1500 } = options;
 	const containerCount = Math.max(3, Math.min(options.containerCount ?? 5, containerCatalog.length));
 	const listeners = new Set<(batch: ContainerStatsBatch) => void>();
-	let timer: ReturnType<typeof setInterval> | null = null;
+        let timer: number | null = null;
 	let sequence = 1;
 
 	const emit = () => {
@@ -91,10 +91,10 @@ export function createMockAgentStream(options: MockAgentStreamOptions): MockAgen
 	};
 
 	const stop = () => {
-		if (timer !== null) {
-			clearInterval(timer);
-			timer = null;
-		}
+                if (timer !== null) {
+                        clearInterval(timer);
+                        timer = null;
+                }
 	};
 
 	return {
