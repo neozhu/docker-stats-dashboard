@@ -148,18 +148,14 @@ docker run --rm -it \
 
 				<CardContent class="space-y-4">
 					{#if batch}
-						<div class="grid gap-4 md:grid-cols-3">
-							<div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
-								<p class="text-muted-foreground">Host CPU (approx)</p>
-								<p class="mt-1 text-2xl font-semibold">{formatPercent(batch.agent_metrics.cpu_pct)}</p>
-							</div>
-							<div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
-								<p class="text-muted-foreground">Host Memory (sum)</p>
-								<p class="mt-1 text-2xl font-semibold">{formatBytes(batch.agent_metrics.mem_bytes)}</p>
-							</div>
-							<div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
-								<p class="text-muted-foreground">Containers sampled</p>
-								<p class="mt-1 text-2xl font-semibold">{batch.containers.length}</p>
+                                                <div class="grid gap-4 md:grid-cols-2">
+                                                        <div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
+                                                                <p class="text-muted-foreground">Host CPU (approx)</p>
+                                                                <p class="mt-1 text-2xl font-semibold">{formatPercent(batch.agent_metrics.cpu_pct)}</p>
+                                                        </div>
+                                                        <div class="rounded-lg border border-border/60 bg-card/50 p-4 text-sm">
+                                                                <p class="text-muted-foreground">Host Memory (sum)</p>
+                                                                <p class="mt-1 text-2xl font-semibold">{formatBytes(batch.agent_metrics.mem_bytes)}</p>
                                                         </div>
                                                 </div>
 
