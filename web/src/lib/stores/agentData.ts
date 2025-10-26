@@ -60,14 +60,40 @@ export function startSSE() {
             return next;
           });
           const history = Array.isArray(data.history)
-            ? (data.history as AgentCpuSample[]).map((sample) => ({
-                at: sample.at,
-                cpu_pct: sample.cpu_pct
-              }))
+            ? (data.history as AgentCpuSample[])
+                .map((sample) => ({
+                  at: sample.at,
+                  cpu_pct: typeof sample.cpu_pct === 'number' ? sample.cpu_pct : Number(sample.cpu_pct)
+                }))
+                .filter((sample) => Number.isFinite(sample.cpu_pct))
             : [];
-          agentCpuHistory.update((m) => {
-            const next = new Map(m);
-            next.set(payload.agent_id, history);
+
+          const normalizedHistory: AgentCpuSample[] = [];
+          for (const sample of history) {
+            const pct = sample.cpu_pct ?? 0;
+            const last = normalizedHistory.at(-1);
+            if (last && last.cpu_pct === pct) {
+              continue;
+            }
+            normalizedHistory.push({ at: sample.at, cpu_pct: pct });
+          }
+
+          agentCpuHistory.update((store) => {
+            const previous = store.get(payload.agent_id) ?? [];
+            const isSameLength = previous.length === normalizedHistory.length;
+            const isSameSequence =
+              isSameLength &&
+              previous.every((sample, idx) => {
+                const nextSample = normalizedHistory[idx];
+                return sample.at === nextSample.at && sample.cpu_pct === nextSample.cpu_pct;
+              });
+
+            if (isSameSequence) {
+              return store;
+            }
+
+            const next = new Map(store);
+            next.set(payload.agent_id, normalizedHistory);
             return next;
           });
           break;
